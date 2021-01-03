@@ -4,13 +4,16 @@ use std::time::{SystemTime};
 use cloudevents::{EventBuilder, EventBuilderV10, Event};
 use serde_json::json;
 use url::Url;
+use uuid::Uuid;
 
 fn temp_to_cloudevent(temp: f64) -> Event {
   let epoch = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).expect("could not get time"); 
   let epoch_float = epoch.as_secs_f64(); 
-  let payload = json!({"loc": "bedroom", "dt":  epoch_float, "temp": temp});
+  let payload = json!({"loc": "bedroom", "dt":  epoch_float, "temp": temp, "sensorModel": "MCP9808"});
+  let uuid = Uuid::new_v4();
   let event = EventBuilderV10::new()
     .source(Url::parse("http://lytro.wellorder.net/iot/mcp9808").unwrap())
+    .id(uuid.to_hyphenated().to_string())
     .subject("bedroom")
     .ty("com.wellorder.iot.indoorenv")
     .data("application/json", payload)
@@ -21,7 +24,7 @@ fn temp_to_cloudevent(temp: f64) -> Event {
 #[async_std::main]
 async fn main() -> Result<(), Error> {
     println!("Connecting to NATS");
-    let ncres = nats::connect("nats://nats.wellorder.net:4222");
+    let ncres = nats::connect("nats.wellorder.net");
     let nc = match ncres {
         Ok(conn) => conn,
         Err(e) => {
@@ -29,7 +32,6 @@ async fn main() -> Result<(), Error> {
             std::process::exit(1);
         }
     };
-    let nc = nats::connect("nats.")?;
     let stdout = Command::new("python")
         .arg("/home/pi/read_temp.py")
         .stdout(Stdio::piped())
@@ -45,7 +47,7 @@ async fn main() -> Result<(), Error> {
         .map(|x| serde_json::to_string(&x).unwrap())
         .for_each(|event| {
             nc.publish("iot.indoorenv", event).expect("publish failed");
-            println!("published");
+            ();
         });
      Ok(())
 }
